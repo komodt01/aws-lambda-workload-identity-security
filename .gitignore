@@ -1,0 +1,19 @@
+# Rust build artifacts
+/target/
+
+# Cargo Lambda build artifacts
+/target/lambda/
+
+# Environment and credentials
+.env
+.env.*
+*.pem
+*.key
+
+# AWS local configuration
+.aws/
+
+# IDE / OS
+.vscode/
+.DS_Store
+Thumbs.db
