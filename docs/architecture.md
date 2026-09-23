@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document describes the security architecture of the AWS Lambda Workload Identity & Least-Privilege IAM Lab.
+This document describes the security architecture of the AWS Lambda Workload Identity & Least-Privilege IAM project.
 
 The project demonstrates how the security context of an application changes when the same AWS SDK operation moves from a developer workstation to an AWS-managed compute environment.
 
