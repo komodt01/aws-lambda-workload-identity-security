@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document captures the technical and security architecture lessons learned while completing the AWS Lambda Workload Identity & Least-Privilege IAM Lab.
+This document captures the technical and security architecture lessons learned while completing the AWS Lambda Workload Identity & Least-Privilege IAM project.
 
 The value of the exercise extended beyond writing a small Rust application. The lab exposed the full path between application code, AWS SDK behavior, workload identity, IAM authorization, serverless execution, and failure troubleshooting.
 
@@ -247,7 +247,7 @@ This method is more reliable than reacting only to the surface-level error messa
 
 ## 10. Rust Compilation and Lambda Packaging Are Separate Concerns From IAM
 
-Several different layers were involved in the lab:
+Several different layers were involved in the project:
 
 ```text
 Rust Source Code
