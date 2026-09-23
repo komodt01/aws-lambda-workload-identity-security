@@ -4,7 +4,7 @@
 
 This project demonstrates how application identity and authorization change when an AWS workload moves from a local development environment to AWS Lambda.
 
-A Rust application uses the AWS SDK to enumerate Amazon S3 buckets. The application was first executed locally using the developer's AWS credential context and was then adapted and deployed as an AWS Lambda function using a dedicated Lambda execution role.
+A Rust application uses the AWS SDK to enumerate Amazon S3 buckets. The application was first executed locally using the available developer AWS credential context and was then adapted and deployed as an AWS Lambda function using a dedicated Lambda execution role.
 
 During deployment testing, the Lambda function successfully executed but initially failed when attempting to call the Amazon S3 API. Investigation identified that the Lambda execution role lacked the required S3 authorization.
 
@@ -24,20 +24,19 @@ The project demonstrates a fundamental cloud security principle:
 
 ## Security Objectives
 
-The primary objectives of this project are to demonstrate:
+The project demonstrates:
 
-* AWS workload identity
-* Authentication versus authorization
-* AWS SDK credential resolution
-* IAM execution roles
-* Least-privilege access
-* AWS API authorization
-* Lambda workload identity
-* Secure credential handling
-* Application failure-path testing
-* Cloud security troubleshooting
+- AWS workload identity
+- Authentication versus authorization
+- AWS SDK credential resolution
+- Lambda execution roles
+- Least-privilege IAM
+- AWS API authorization
+- Secure credential handling
+- Failure-path testing
+- Cloud security troubleshooting
 
-Rust is used as the implementation language, but the primary focus of the project is cloud security architecture and IAM behavior.
+Rust is the implementation language, but the primary focus is cloud security architecture and IAM behavior.
 
 ---
 
@@ -45,7 +44,7 @@ Rust is used as the implementation language, but the primary focus of the projec
 
 ### Local Execution
 
-During local development, the application uses the AWS SDK credential provider mechanisms available in the developer environment.
+During local development, the application uses the AWS SDK credential mechanisms available in the developer environment.
 
 ```text
 Developer Workstation
@@ -64,20 +63,15 @@ AWS IAM Authorization
         |
         v
 Amazon S3 API
-        |
-        v
-ListBuckets Response
 ```
 
 The application does not contain hard-coded AWS access keys.
 
-The AWS SDK obtains an available credential context and uses those credentials to sign the request sent to AWS.
-
----
+The AWS SDK obtains an available credential context and uses those credentials to sign requests sent to AWS.
 
 ### Lambda Execution
 
-After deployment, the workload no longer depends on the developer's local AWS credentials.
+After deployment, the workload no longer depends on the developer's local AWS credential context.
 
 ```text
 AWS Lambda
@@ -99,56 +93,45 @@ AWS IAM Authorization
      |
      v
 Amazon S3 API
-     |
-     v
-ListBuckets Response
 ```
 
-This creates an important security boundary.
+The application performs essentially the same AWS operation, but the identity under which that operation occurs has changed.
 
-The application's code performs essentially the same AWS operation, but the identity under which the operation occurs has changed.
+This creates an important security boundary between application code and workload identity.
 
 ---
 
 ## Authentication vs. Authorization
 
-One of the primary lessons demonstrated by this project is the distinction between authentication and authorization.
-
-### Authentication
-
 Authentication answers:
 
-> Who is making this request?
+> Who or what is making this request?
 
-Locally, the AWS SDK operates using the developer's available AWS credential context.
+Locally, the AWS SDK operates using the available developer credential context.
 
-In Lambda, AWS provides the workload with temporary credentials associated with the Lambda execution role.
-
-### Authorization
+In Lambda, AWS provides temporary credentials associated with the function's execution role.
 
 Authorization answers:
 
 > What is this identity permitted to do?
 
-The Lambda function had a valid AWS identity and could execute successfully, but its execution role initially lacked permission to enumerate S3 buckets.
+The Lambda function had a valid AWS identity and could execute, but its execution role initially lacked permission to enumerate S3 buckets.
 
-The resulting application failure demonstrated that successful authentication does not imply successful authorization.
+The resulting failure demonstrated that successful authentication does not imply successful authorization.
 
 ---
 
 ## IAM Least-Privilege Design
 
-The application requires the ability to enumerate S3 buckets.
+The application requires one S3 capability: enumerating the buckets available to the account.
 
-The required IAM action is:
+The corresponding IAM action is:
 
 ```text
 s3:ListAllMyBuckets
 ```
 
-Rather than assigning broad S3 administrative or read permissions, the Lambda execution role was granted the specific action required by the workload.
-
-Conceptually, the permission is:
+A policy representing that permission is:
 
 ```json
 {
@@ -163,15 +146,24 @@ Conceptually, the permission is:
 }
 ```
 
-The wildcard resource does not mean that the function has unrestricted access to every S3 operation. `ListAllMyBuckets` is an account-level S3 action and is not scoped to an individual bucket ARN.
+The `Resource: "*"` value does not grant unrestricted S3 access. `s3:ListAllMyBuckets` is an account-level action and is not scoped to an individual bucket or object ARN.
 
-No permissions to read, modify, upload, or delete S3 objects are required for the application.
+The workload does not require permissions such as:
+
+```text
+s3:GetObject
+s3:PutObject
+s3:DeleteObject
+s3:CreateBucket
+s3:DeleteBucket
+s3:PutBucketPolicy
+```
+
+The security decision is therefore based on the capability the workload actually requires rather than attaching a broad S3 policy.
 
 ---
 
-## Application Flow
-
-The application performs the following sequence:
+## Application and Authorization Flow
 
 ```text
 Application Starts
@@ -191,7 +183,7 @@ AWS Authenticates Request
         v
 IAM Evaluates Authorization
         |
-        +------ Denied ------> Application Error Handling
+        +------ Denied ------> SDK Error / Lambda Failure
         |
       Allowed
         |
@@ -202,36 +194,54 @@ S3 Returns Bucket Metadata
 Application Processes Response
         |
         v
-Results Returned
+JSON Response Returned
+```
+
+This separates several concerns that can otherwise be confused during troubleshooting:
+
+```text
+Application Code
+      ↓
+AWS SDK
+      ↓
+Credential Source
+      ↓
+AWS Principal
+      ↓
+IAM Authorization
+      ↓
+AWS API
+      ↓
+Response or Failure
 ```
 
 ---
 
 ## Security Failure Testing
 
-The project intentionally tested failure conditions rather than validating only the successful execution path.
+The project included failure-path testing rather than validating only successful execution.
 
 ### Missing Credential Test
 
-The local application was executed with its normal credential sources intentionally made unavailable.
+The local application was tested with its normal AWS credential sources intentionally made unavailable.
 
-Instead of relying solely on an unhandled AWS SDK error, application error handling was added to provide a controlled failure message.
+The test demonstrated how the application behaves when the AWS SDK cannot obtain a usable credential context.
 
-This demonstrates the importance of designing cloud applications for authentication and service-access failures.
+In the current implementation, AWS SDK errors are propagated rather than handled through custom application-specific error logic.
+
+This demonstrates why credential and service-access failures should be considered explicitly when designing cloud workloads.
 
 ### Lambda Authorization Failure
 
-The Lambda function was successfully built and deployed.
+The Lambda function was successfully built and deployed, but its initial S3 request failed because the execution role did not authorize the required S3 action.
 
-Initial invocation produced an application failure when the workload attempted to access S3.
-
-Troubleshooting followed the execution path:
+Troubleshooting followed the request path:
 
 ```text
 Lambda Deployment
         |
         v
-Successful Invocation
+Function Invocation
         |
         v
 Application Executes
@@ -243,10 +253,10 @@ S3 API Request
 Authorization Failure
         |
         v
-Lambda Execution Role Inspected
+Execution Role Inspected
         |
         v
-Required IAM Permission Identified
+Required IAM Action Identified
         |
         v
 Least-Privilege Permission Added
@@ -255,15 +265,15 @@ Least-Privilege Permission Added
 Successful Invocation
 ```
 
-This distinction is important operationally:
+This demonstrates an important operational distinction:
 
-**Successful infrastructure deployment does not guarantee successful application execution.**
+> Successful infrastructure deployment does not guarantee successful application execution.
 
 ---
 
 ## Function Output
 
-After the execution role was granted the required permission, the deployed Lambda function successfully returned an S3 bucket count and bucket list.
+After the execution role was granted the required permission, the Lambda function returned an S3 bucket count and bucket list.
 
 Example sanitized output:
 
@@ -280,59 +290,93 @@ Real AWS account identifiers and resource names are intentionally excluded from 
 
 ---
 
-## Technologies
+## Security Architecture Principles
 
-* Amazon Web Services (AWS)
-* AWS Lambda
-* AWS Identity and Access Management (IAM)
-* Amazon S3
-* AWS SDK for Rust
-* Rust
-* Cargo
-* Cargo Lambda
-* AWS CLI
-* Linux / WSL
+### Workload Identity Over Embedded Credentials
+
+The application does not contain long-lived AWS access keys.
+
+When deployed to Lambda, the workload uses the AWS identity associated with its execution role and temporary credentials provided through the AWS runtime environment.
+
+### Least Privilege
+
+IAM authorization should reflect the capabilities a workload actually requires.
+
+For this workload:
+
+```text
+Required capability:
+Enumerate S3 buckets
+
+Required IAM action:
+s3:ListAllMyBuckets
+
+Not required:
+s3:*
+```
+
+### Authentication and Authorization Are Separate
+
+A workload may possess a valid AWS identity while still being denied access to a service operation.
+
+Identity establishes the principal. IAM determines what that principal is authorized to do.
+
+### Execution Context Determines Identity
+
+The same application code can execute under different AWS identities depending on its environment.
+
+Local execution uses the available developer credential context, while Lambda execution uses the function's execution role.
+
+### Failure Paths Are Part of Architecture
+
+Credential failures, authorization failures, downstream service failures, and application failures should be considered alongside the successful execution path.
+
+### Deployment Success Is Not Runtime Success
+
+Successful compilation and deployment do not prove that IAM permissions, external dependencies, or application behavior are correct.
+
+Runtime validation is still required.
 
 ---
 
-## Key Security Takeaways
+## Production Considerations
 
-### Identity belongs to the workload context
+This project focuses on workload identity and IAM behavior rather than implementing a complete production security architecture.
 
-Application code does not inherently possess an AWS identity.
+A production implementation could additionally include:
 
-The identity used by the application depends on where and how the workload executes.
+- Infrastructure as Code for execution roles and IAM policies
+- IAM policy review and approval workflows
+- CloudTrail logging and monitoring
+- Role ownership and lifecycle governance
+- Permission boundaries where appropriate
+- AWS Organizations service control policies
+- Continuous IAM analysis and configuration-drift detection
+- Application-specific error handling and observability
 
-### Avoid embedded credentials
+These are architectural extensions rather than controls implemented by this repository.
 
-No AWS access keys are embedded in the application source code.
+---
 
-AWS-native workload identity should be used when the application executes within AWS.
+## Technologies
 
-### Authentication and authorization are separate controls
-
-An authenticated Lambda workload can still be denied access to an AWS service when its execution role does not authorize the requested operation.
-
-### Apply least privilege
-
-Only the IAM capability required by the workload should be granted.
-
-A simple bucket-enumeration function does not require broad S3 access.
-
-### Test failure paths
-
-Cloud architecture should account for credential failures, authorization failures, service failures, and other non-happy-path conditions.
-
-### Deployment success is not application success
-
-Infrastructure can deploy correctly while application dependencies, IAM permissions, or downstream service interactions still fail.
+- Amazon Web Services (AWS)
+- AWS Lambda
+- AWS Identity and Access Management (IAM)
+- Amazon S3
+- AWS SDK for Rust
+- Rust
+- Cargo
+- Cargo Lambda
+- AWS CLI
+- Linux / WSL
 
 ---
 
 ## Repository Structure
 
 ```text
-aws-lambda-s3-workload-identity/
+aws-lambda-workload-identity-security/
 ├── README.md
 ├── Cargo.toml
 ├── src/
@@ -348,29 +392,59 @@ aws-lambda-s3-workload-identity/
 
 ## Project Origin
 
-This project was adapted from an educational AWS SDK for Rust lab.
+This project was adapted from an educational AWS SDK for Rust exercise that demonstrated basic Amazon S3 bucket enumeration.
 
-The original exercise demonstrated basic Amazon S3 bucket enumeration using the AWS SDK for Rust.
+The implementation was extended to explore cloud security architecture concepts including:
 
-The project was extended to explore cloud security architecture concepts including:
+- Lambda deployment
+- AWS workload identity
+- Lambda execution roles
+- IAM authorization
+- Least-privilege permission design
+- Credential failure testing
+- Authorization failure troubleshooting
+- Local identity versus cloud workload identity
 
-* Lambda deployment
-* AWS workload identity
-* Lambda execution roles
-* IAM authorization
-* Least-privilege permission design
-* Credential failure handling
-* Authorization failure troubleshooting
-* Local identity versus cloud workload identity
-
-The purpose of this repository is to document and demonstrate the security architecture concepts explored through those extensions rather than to present the original educational example as independently authored code.
+The purpose of this repository is to document and demonstrate the security architecture concepts explored through those extensions rather than present the original educational example as independently authored code.
 
 ---
 
 ## Additional Documentation
 
-Detailed documentation is provided in:
+Additional analysis is available in:
 
-* `docs/architecture.md` — workload identity, trust boundaries, and execution flows
-* `docs/iam-security.md` — IAM authorization and least-privilege analysis
-* `docs/lessons-learned.md` — implementation, troubleshooting, and architectural lessons
+- `docs/architecture.md` — workload identity, trust boundaries, and execution flows
+- `docs/iam-security.md` — IAM authorization and least-privilege analysis
+- `docs/lessons-learned.md` — implementation, troubleshooting, and architectural lessons
+
+---
+
+## Key Takeaway
+
+The important security lesson is not the S3 bucket-listing operation itself.
+
+The project demonstrates how application code, workload identity, temporary credentials, IAM authorization, and AWS service APIs interact as one system.
+
+```text
+AWS Lambda
+     |
+     v
+Application
+     |
+     v
+AWS SDK
+     |
+     v
+Execution Role
+     |
+     v
+Temporary Credentials
+     |
+     v
+IAM Authorization
+     |
+     v
+Amazon S3
+```
+
+Secure cloud access depends on both **which identity performs an operation** and **exactly what that identity is authorized to do**.
