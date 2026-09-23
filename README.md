@@ -1,4 +1,4 @@
-# AWS Lambda Workload Identity & Least-Privilege IAM Lab
+# AWS Lambda Workload Identity & Least-Privilege IAM Architecture
 
 ## Overview
 
