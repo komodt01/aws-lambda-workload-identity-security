@@ -186,7 +186,7 @@ The original application focused primarily on successful S3 access.
 
 The project was extended to test what happened when AWS credentials were unavailable.
 
-The failure was handled more deliberately rather than relying entirely on an unhandled SDK error.
+The test demonstrated how the application behaves when the AWS SDK cannot obtain a usable credential context. In the current implementation, SDK errors are propagated to the Lambda runtime rather than handled through custom application-specific error logic.
 
 Cloud applications should be designed for both:
 
